@@ -1,0 +1,119 @@
+看https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump，https://www.ncbi.nlm.nih.gov/books/NBK570248/，https://www.ncbi.nlm.nih.gov/books/NBK570250/这三个链接最标准，NCBI提供
+
+数据下载
+1.以https://www.ncbi.nlm.nih.gov/geo/query/acc.cgi?acc=GSE136831为例
+在SRA Run Selector中
+SRA测序数据的cart文件在My Request中SRA data (reads and reference alignments)点击SRA RUN selector 
+基因型和表型数据在Phenotype and Genotype files中，点击dbGaP File Selector
+
+2.如果是在windows中，需要安装WSL2
+教程如下https://learn.microsoft.com/zh-cn/windows/wsl/install 
+需要查看自己的电脑C盘是否有足够的存储空间，100g以上
+可以使用vscode操作wsl2
+https://zhuanlan.zhihu.com/p/466001838 
+
+
+如果是linux系统就不需要这一步
+
+
+3.在linux中安装aspera connect
+
+wget https://download.asperasoft.com/download/sw/connect/3.8.0/ibm-aspera-connect-3.8.0.158555-linux-g2.12-64.tar.gz
+tar zxf ibm-aspera-connect-3.8.0.158555-linux-g2.12-64.tar.gz
+sh ibm-aspera-connect-3.8.0.158555-linux-g2.12-64.sh
+#echo 'PATH=$PATH:~/.aspera/connect/bin/' >> ~/.bashrc
+source ~/.bashrc
+ascp --help
+
+
+
+4.安装SRA-tools（https://github.com/ncbi/sra-tools/wiki/02.-Installing-SRA-Toolkit）
+
+###For Ubuntu（其他系统链接有）
+wget --output-document sratoolkit.tar.gz https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/current/sratoolkit.current-ubuntu64.tar.gz  ###这里下载后会有一个文件夹名
+
+tar -vxzf sratoolkit.tar.gz
+
+#export PATH=$PATH:$PWD/sratoolkit.3.0.7-ubuntu64/bin（格式是export PATH=$PATH:$PWD/上面的文件夹名/bin）（这个命令是把bin放进系统路径中）
+
+#echo '/home/lin/dbgap/sratoolkit.3.0.7-ubuntu64/bin/' >> ~/.bashrc
+which fastq-dump
+which fasterq-dump   ##看看这些重要的函数有没有
+fastq-dump --stdout -X 2 SRR390728 ###测试一下工具
+
+5.  配置SRA-tools
+
+vdb-config -i
+
+MAIN菜单的Enable Remote Access勾上，要远程访问
+
+CACHE菜单定义储存路径和暂存路径
+
+AWS菜单的 report cloud instance identity勾上
+accept charges for AWS不能勾，因为会使用aws下载，需要付费账号
+
+GCP菜单的 report cloud instance identity勾上
+accept charges for GCP不能勾，因为会使用GCP下载，需要付费账号
+save保存并exit
+
+
+6.下载SRA文件（key，cart文件，以及一个空的文件夹用来放数据（缓存的文件夹在前面设置好，别动一般没什么问题）（cart文件和key文件放在同一个下载文件夹中））,转成fastq文件
+
+prefetch --cart /mnt/s/twas/dbGap/download_empty2/cart_DAR125750_202310260405.krt
+
+fasterq-dump在HowTo: fasterq dump 中有完整的解释
+https://github.com/ncbi/sra-tools/wiki/HowTo:-fasterq-dump
+
+fasterq-dump -p  -e 10 --split-3 /mnt/s/twas/dbGap/download_empty/SRR14213423/SRR14213423.sra
+
+fasterq-dump --split-3  -p  -e 10 
+###-p的意思是查看进度，-e的意思是调用多线程，后面10设置线程数，--split-3是默认的分割方式，https://zhuanlan.zhihu.com/p/591140275有不同的分割方式的介绍
+####关于fasterq-dump的详细用法在https://github.com/ncbi/sra-tools/wiki/08.-prefetch-and-fasterq-dump，用很多参数指定，我用了最简单的
+
+
+
+
+
+7 批量下载GEO数据
+
+nohup prefetch -O . $(<SRR_Acc_List.txt) &  #挂在后台下载
+
+#批量解压sra文件
+for f in *.sra
+do
+nohup fastq-dump --split-3 $f &
+done 
+
+具体可以看https://zhuanlan.zhihu.com/p/89024212
+
+
+8 数据转换
+8.1 fastq质控
+
+安装fastqc
+conda install -c bioconda fastqc
+#使用fastqc进行质量检测，在当前文件夹生成一个.html网页文件和一个.zip文件。
+fastqc 样本名称
+https://zhuanlan.zhihu.com/p/496382502
+
+8.2 单细胞数据（已经获取fastq文件）
+将进行 fastq 到 matrix 的转换：
+要下载cellranger和基因组文件（人的），下载地址：
+https://www.10xgenomics.com/support/software/cell-ranger/downloads
+测试cellranger count --help
+
+
+需要对fastq文件进行重命名
+_S1_L001_R1_001
+_S1_L001_R2_001
+
+参考信息：
+https://mp.weixin.qq.com/s/39rZCnLOURsl6jVBVf5Oug
+https://mp.weixin.qq.com/s/rw1LZbhqWJTLGiBSR5Nvww
+
+$ cellranger count --id=sample345 \  # 输入文件夹名称
+                   --transcriptome=/opt/refdata-gex-GRCh38-2020-A \ # 参考基因组名称，人/鼠基因组在软件下载网页中可直接下载使用
+                   --fastqs=/home/jdoe/runs/HAWT7ADXX/outs/fastq_path \ # fastq文件夹路径
+                   --sample=mysample \  # fastq文件夹中待分析的样本名前缀
+                   --include-introns <true|false> # v7以上版本默认添加intron信息，即include-introns = true，这个参数=false的时候默认统计比对到转录本中的reads信息仅包含exon来源的reads(非模式物种或抽核文库推荐该参数=ture)
+# 其他参数根据文库基础信息选填
